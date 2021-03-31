@@ -1,0 +1,263 @@
+---
+title: "Analyze and Test Spatial Autocorrelation of AirBnB Prices" 
+author: "Fabio Taddei Dalla Torre - Mat.: 214924"
+output: html_document
+---
+
+
+It is plausible that the prices of AirBnB are somehow spatially autocorrelated. The analysis, to test whether this spatial autocorrelation exist or not, will be carried out using the data of the AirBnB that has been used in the Jupyter notebook. In the notebook is possible to see how this dataset has been created.
+
+The analysis will be carried on in the following way:
+
+- Loading the data and computing centroids
+- Build spatial weight matrices given different definition of neighborhood for consistency
+- Calculate Global Moran's I index
+- Build Moran Scatterplot to look for local auto correlation
+- Calculate local Moran's I index
+
+**Loading the data**
+
+```{r setup, include=FALSE}
+library(spdep); library(rgdal)
+```
+
+
+```{r}
+# Loading the Cambrisge shapefile that contains all the data
+cambridge <- readOGR("Cambridge", "Cambridge")
+```
+
+```{r}
+# Check the data
+#View(cambridge@data)
+```
+
+
+First of all I need to compute the centroids of the ares in order to have a representative point for each districts.
+```{r}
+centroids <- coordinates(cambridge)
+```
+
+
+## 1. Creating the spatial weight matrix
+
+The first step in testing if there is spatial auto correlation between the different prices is to define a spatial weigh matrix. 
+
+### 1.1 Defining spatial neighbors
+
+Various definitions of neighborhood are possible, hence we need to perform different solutions:
+
+- k-Nearest neighbors
+- Critical cut-off distance
+- Contiguity-based neighborhood
+- Free-Form spatial weight matrices
+
+Different solution will be performed in order to test for consistency.
+
+
+```{r}
+#To visualize the different neighborhood amd centroids
+plot(cambridge, border = "purple")
+points(centroids, cex=0.8)
+```
+
+**1.1.1 k-Nearest neighbors**
+
+
+This definition of neighborhood ensures that each spatial unit has exactly the same number k of neighbors. For example for k = 1 the neighbor is the closest units. 
+
+I will use k = 1 and k = 4.
+```{r}
+# longlat = F it will use the euclidean distnace, longlat = T it will take into consideraiton for the curvature of the Earth
+knn1cb <- knn2nb(knearneigh(centroids,k=1,longlat=T)) 
+knn4cb <- knn2nb(knearneigh(centroids,k=4,longlat=T))
+```
+
+
+```{r}
+#Cheking visually the 1-nn
+
+plot(cambridge, border="grey")
+plot(knn1cb, centroids, add=TRUE)
+```
+
+**1.1.2 Critical cut-off distance** 
+
+Two spatial units are considered as neighbors if their distance is equal, or less than equal, to a certain fixed distance which represents a critical cut-off. For this method first we need to compute the maximum distance between two centroids, by doing this we assure that all regions have at least one neighbor. This value will the minimum cut-off distance
+
+Computing the minimum cut-off distance
+```{r}
+# we need to compute the distance among neigbour and find the maximum
+min_cut_off <- max(unlist(nbdists(knn1cb, centroids, longlat=T)))
+min_cut_off
+```
+
+The minimum cut-off distance has been resulted 1.280868. Moreover I will create different concept of neighborhood by using different cut-off for consistency.
+
+```{r}
+dnb1.3 <- dnearneigh(centroids, 0, 1.3, longlat=TRUE); dnb1.3
+dnb2 <- dnearneigh(centroids, 0, 2, longlat=TRUE); dnb2
+dnb5 <- dnearneigh(centroids, 0, 5, longlat=TRUE); dnb5
+```
+
+**1.1.3 Contiguity-based neighborhood** 
+
+In this case two units are considered neighbor if they share a common boundary.
+
+```{r}
+contnb <- poly2nb(cambridge, queen=T)
+# Plotting the graph pf centroids in order to visualise the results
+plot(cambridge, border="grey")
+plot(contnb, centroids, add=TRUE)
+```
+
+**1.1.4 Free-Form spatial weight matrices**
+In this case the spatial weight matrix will be calculated as an invers function of the distance.
+```{r}
+distM <- as.matrix(dist(centroids)) #distance matrix
+# Calcualting weights
+W1 <- 1/(1+(distM)); diag(W1) <- 0
+
+#Row-standardize
+W1s <- W1/rowSums(W1) 
+```
+
+
+
+### 1.2 Defining spatial weights Matrix
+
+Given the previous definition it is possible to compute different version of spatial wight matrix.
+
+```{r}
+# SWM made by knn
+knn1cb.listw <- nb2listw(knn1cb,style="W")
+knn4cb.listw <- nb2listw(knn4cb,style="W")
+
+# SWM made by critical cut-off distance
+dnb1.3.listw <- nb2listw(dnb1.3,style="W")
+dnb2.listw <- nb2listw(dnb2,style="W")
+dnb5.listw <- nb2listw(dnb5,style="W")
+
+# SWM made by contiguity base approach
+contnb.listw <- nb2listw(contnb,style="W")
+
+# SWM made by Free-Form 
+listW1s <- mat2listw(W1s)
+```
+
+
+## 2. Test for spatial autocorrelation
+
+### 2.1 Global spatial autocorrelation
+
+The existence of a global spatial autocorrelation among prices in the different neighborhood will be carried on by calculating the Global Moran's I index given the previously computed spatial weight matrix.
+
+In particular the Moran's I test:
+
+- H0: no spatial autocorrelation
+- H1: spatial autocorrelation
+
+
+```{r}
+# With the option *randomisation = FALSE* the test is performing assuming under normality assumption
+# K-nn
+moran.test(cambridge$mean_price, knn1cb.listw, randomisation=FALSE)
+moran.test(cambridge$mean_price, knn4cb.listw, randomisation=FALSE)
+# Critical cut-off distance
+moran.test(cambridge$mean_price, dnb1.3.listw, randomisation=FALSE)
+moran.test(cambridge$mean_price, dnb2.listw, randomisation=FALSE)
+moran.test(cambridge$mean_price, dnb5.listw, randomisation=FALSE)
+# Contiguity based approach
+moran.test(cambridge$mean_price, contnb.listw, randomisation=FALSE)
+#Free-Form
+moran.test(cambridge$mean_price, listW1s, randomisation=FALSE)
+```
+
+In every scenario the P-Value is quite high, that means the null hypothesis cannot be rejected and so that there are evidence of no global spatial autocorrelation.
+
+It is possible to perform the test under the randomization assumption. In this case the observed values of x are randomly permuted despite the underlying distribution in the population.
+
+```{r}
+# K-nn
+moran.test(cambridge$mean_price, knn1cb.listw, randomisation=TRUE)
+moran.test(cambridge$mean_price, knn4cb.listw, randomisation=TRUE)
+# Critical cut-off distance
+moran.test(cambridge$mean_price, dnb1.3.listw, randomisation=TRUE)
+moran.test(cambridge$mean_price, dnb2.listw, randomisation=TRUE)
+moran.test(cambridge$mean_price, dnb5.listw, randomisation=TRUE)
+# Contiguity based approach
+moran.test(cambridge$mean_price, contnb.listw, randomisation=TRUE)
+#Free-Form
+moran.test(cambridge$mean_price, listW1s, randomisation=TRUE)
+```
+
+Even in this case the P-values are quite high compared to the usual threshold value.
+
+### 2.2 Local Spatial Autocorrelation
+
+**Moran's scatterplot**
+
+Local spatial autocorrelation can be investigated by using the Moran's Scatterplot.
+
+```{r}
+# Producing the Moran scatterpot by using the different spatial weith matrices calcluated at point 1.2
+par(mfrow=c(2,2))
+# K.nn
+  g1 <- moran.plot(cambridge$mean_price, listw=knn1cb.listw, main="Moran scatterplot 1-nn", return_df=F)
+  g2 <- moran.plot(cambridge$mean_price, listw=knn1cb.listw, main="Moran scatterplot 4-nn", return_df=F)
+# Critical cut-off distance
+  g3 <- moran.plot(cambridge$mean_price, listw=dnb1.3.listw, main="Moran scatterplot 1.3 km", return_df=F)
+  g4 <- moran.plot(cambridge$mean_price, listw=dnb2.listw, main="Moran scatterplot 2 Km", return_df=F)
+  g5 <- moran.plot(cambridge$mean_price, listw=dnb5.listw, main="Moran scatterplot 5 Km", return_df=F)
+# Contiguity based approach
+  g6 <- moran.plot(cambridge$mean_price, listw=contnb.listw, main="Moran scatterplot Contiguity-Based", return_df=F)
+# Free-Form
+  g7 <- moran.plot(cambridge$mean_price, listW1s, main="Moran scatterplot Free-Form", return_df=F)
+```
+
+On the horizontal axis of the scatterplot there is the variable of interest (*mean_price*) while on the vertical axis there is the spatial lag of this variable. 
+In this case all the scatterplots present a negative inclined line, that means a possible negative correlation. In all the cases the inclination of the line cannot suggest any clear sign of local correlation. 
+
+**Local Moran's  I**
+
+With the Local Moran's I is possible to prove the statistical significance of the insight given by the Moran Scatterplot
+
+```{r}
+# K-nn
+lmI_1nn <- localmoran(cambridge$mean_price, knn1cb.listw)
+head(lmI_1nn)
+lmI_4nn <- localmoran(cambridge$mean_price, knn4cb.listw)
+head(lmI_4nn)
+```
+
+```{r}
+# Critical cut-off distance
+lmI_1.3 <- localmoran(cambridge$mean_price, dnb1.3.listw)
+head(lmI_1.3)
+lmI_2 <- localmoran(cambridge$mean_price, dnb2.listw)
+head(lmI_2)
+lmI_5 <- localmoran(cambridge$mean_price, dnb5.listw)
+head(lmI_5)
+```
+
+```{r}
+# Contiguity based approach
+lmI_cb <- localmoran(cambridge$mean_price, contnb.listw)
+head(lmI_cb)
+```
+
+```{r}
+# Free - Form
+lmI_cb <- localmoran(cambridge$mean_price, listW1s)
+head(lmI_cb)
+```
+
+From the output of all the Local Moran's I test it can be seen that there are no evidence against the null assumption of no spatial autocorrelation hence there are no evidence that could suggest local spatial autocorrelation. 
+
+As already stated in the Jupyter notebook this phenomena of no spatial autocorrelation could be the consequence of the proximity of the city of Cambridge to the Boston one. Moreover by looking at the map of the are it is possible to see that, the East-Cambridge district that is one of the expensive, is the closest to the city of Boston. Because of that it is possible that the prices of the AirBnB are influenced by the one of the Boston, hence in order to investigate the presence of spatial autocorrelation of prices should be better to do this by taking into account the prices of Boston as well. 
+
+
+
+
+
+
