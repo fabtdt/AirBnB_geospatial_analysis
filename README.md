@@ -10,6 +10,7 @@ The various file present in the repository are:
 5.	Cambridge.ipynb -> jupyter notebook, it is performs the data retrieval and the analysis of the spatial distribution of the AirBnB according to some given research question. 
 6.	Cambridge.html -< html version of the jupyther notebook
 7.	Spatil_autocorrelation.Rmd -> the Rmd notebook is performed the spatial autocorrelation of prices
+
 Data are retrieved from different platform:
 1.	AirBnB locations -> InsideAirbnb
 2.	Cambridge neighbourhood -> Cambridge open data portal
