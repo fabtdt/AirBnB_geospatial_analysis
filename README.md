@@ -1,6 +1,6 @@
 # AirBnB geospatial analysis
 
-## Overwie
+## Overview
 
 The project aims to investigate the spatial distribution and the spatial autocorrelation of prices of the AirBnB present in Cambridge MA.
 
